@@ -20,15 +20,14 @@ struct AccData {
 };
 
 #define MAX_SAMPLES 200
+#define UPLOAD_BATCH_SIZE 100  // จำนวนข้อมูลที่ส่งต่อครั้ง
 
-// Queue สำหรับ double buffering
 QueueHandle_t bufferQueueA;
 QueueHandle_t bufferQueueB;
 QueueHandle_t writeQueue;
 QueueHandle_t sendQueue;
 
 volatile bool readyToSend = false;
-
 SemaphoreHandle_t switchMutex;
 
 FirebaseData fbdo;
@@ -81,17 +80,16 @@ void setup() {
 
 void TaskSensor(void* pvParameters) {
   while (true) {
+    unsigned long now = millis();
     mpu.update();
 
     AccData data;
-    data.timestamp = millis();
+    data.timestamp = now;
     data.x = mpu.getAccX() * 9.81;
     data.y = mpu.getAccY() * 9.81;
     data.z = mpu.getAccZ() * 9.81;
 
-    // ลองใส่ลง Queue
     if (xQueueSend(writeQueue, &data, 0) == errQUEUE_FULL) {
-      // ถ้าเต็ม ให้สลับ buffer
       if (xSemaphoreTake(switchMutex, portMAX_DELAY)) {
         if (!readyToSend) {
           QueueHandle_t temp = writeQueue;
@@ -103,8 +101,8 @@ void TaskSensor(void* pvParameters) {
         xSemaphoreGive(switchMutex);
       }
 
-      // หลังสลับ buffer ใส่ใหม่แบบ blocking
-      xQueueSend(writeQueue, &data, portMAX_DELAY);
+      // หลังสลับแล้วลองใส่ข้อมูลใหม่อีกครั้ง
+      xQueueSend(writeQueue, &data, 50 / portTICK_PERIOD_MS);
     }
 
     vTaskDelay(10 / portTICK_PERIOD_MS);  // sampling ทุก 10 ms
@@ -113,7 +111,6 @@ void TaskSensor(void* pvParameters) {
 
 void TaskUploader(void* pvParameters) {
   AccData data;
-  FirebaseJsonArray jsonArray;
 
   while (true) {
     if (readyToSend) {
@@ -121,6 +118,9 @@ void TaskUploader(void* pvParameters) {
       unsigned long startTime = millis();
 
       if (xSemaphoreTake(switchMutex, portMAX_DELAY)) {
+        int count = 0;
+        FirebaseJsonArray jsonArray;
+
         while (xQueueReceive(sendQueue, &data, 0) == pdTRUE) {
           FirebaseJson jsonItem;
           jsonItem.set("timestamp", data.timestamp);
@@ -128,25 +128,48 @@ void TaskUploader(void* pvParameters) {
           jsonItem.set("Y", data.y);
           jsonItem.set("Z", data.z);
           jsonArray.add(jsonItem);
+          count++;
+
+          // ถ้าครบ batch ขนาด 100 → ส่งขึ้น Firebase
+          if (count >= UPLOAD_BATCH_SIZE) {
+            if (Firebase.ready()) {
+              if (Firebase.RTDB.push(&fbdo, "/sensor/batchAcceleration", &jsonArray)) {
+                Serial.println("Sub-batch upload success!");
+              } else {
+                Serial.print("Sub-batch upload failed: ");
+                Serial.println(fbdo.errorReason());
+              }
+            } else {
+              Serial.println("Firebase not ready, skipping this batch.");
+            }
+
+            jsonArray.clear();
+            count = 0;
+          }
         }
+
+        // ส่ง batch สุดท้ายถ้ามีเหลือ
+        if (count > 0 && jsonArray.size() > 0) {
+          if (Firebase.ready()) {
+            if (Firebase.RTDB.push(&fbdo, "/sensor/batchAcceleration", &jsonArray)) {
+              Serial.println("Final sub-batch upload success!");
+            } else {
+              Serial.print("Final sub-batch upload failed: ");
+              Serial.println(fbdo.errorReason());
+            }
+          }
+        }
+
         readyToSend = false;
         xSemaphoreGive(switchMutex);
+        Serial.printf("Upload took %lu ms\n", millis() - startTime);
       }
-
-      if (Firebase.RTDB.push(&fbdo, "/sensor/batchAcceleration", &jsonArray)) {
-        Serial.println("Batch upload success!");
-      } else {
-        Serial.print("Batch upload failed: ");
-        Serial.println(fbdo.errorReason());
-      }
-
-      jsonArray.clear();
-      Serial.printf("Upload took %lu ms\n", millis() - startTime);
     }
 
-    vTaskDelay(50 / portTICK_PERIOD_MS);  // เว้นระยะรอ
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
 void loop() {
+  // ไม่มีอะไร เพราะใช้ FreeRTOS task แยกทำงานหมดแล้ว
 }
