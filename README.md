@@ -9,7 +9,8 @@ An IoT + AI project that detects early signs of equipment failure using ESP32 an
 - `AI-ML/`: Training scripts and machine learning models for fault prediction.
 - `web/`: Web interface to visualize real-time sensor data.
 - `docs/`: System architecture diagrams and documentation.
-- `data/`: Contains system architecture diagrams, flowcharts, and other relevant documentation that describe the design and structure of the project. This folder serves as a central place for visual aids and technical documents to help team members and stakeholders understand the overall system.
+- `data/raw/`: Contains raw, unprocessed sensor data collected from devices.
+- `data/processed/`: Contains cleaned and preprocessed data ready for analysis or modeling.
 
 ## Tech Stack
 
