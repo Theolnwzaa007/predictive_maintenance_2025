@@ -24,4 +24,4 @@ An IoT + AI project that detects early signs of equipment failure using ESP32 an
 git clone https://github.com/Theolnwzaa007/predictive_maintenance_2025.git
 cd AI-ML
 pip install -r requirements.txt
-python train_model.py
+python (To be updated)
