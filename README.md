@@ -1,6 +1,6 @@
 # predictive_maintenance_2025
 
-An IoT + AI project that detects early signs of equipment failure using ESP32 and ML models.
+An IoT + AI project that detects early signs of equipment failure using ESP32 and AI models.
 
 ## Folder Structure
 
